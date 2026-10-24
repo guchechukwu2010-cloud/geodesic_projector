@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Globe - Shortest Distance Simulation</title>
+    <!-- Load Plotly.js directly from CDN -->
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #111;
+            color: #eee;
+            overflow: hidden;
+            display: flex;
+            flex-direction: row;
+        }
+        #sidebar {
+            width: 350px;
+            background-color: #1a1a1a;
+            padding: 20px;
+            box-sizing: border-box;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            z-index: 10;
+        }
+        #plot-container {
+            flex-grow: 1;
+            height: 100vh;
+            position: relative;
+        }
+        h2 {
+            margin-top: 0;
+            color: #fff;
+            border-bottom: 2px solid #333;
+            padding-bottom: 10px;
+        }
+        .instruction {
+            background-color: #2a2a2a;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 0.9em;
+            line-height: 1.4em;
+            border-left: 4px solid #00bc8c;
+            margin-bottom: 20px;
+        }
+        .point-display {
+            background-color: #222;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            border: 1px solid #333;
+        }
+        .point-title {
+            font-weight: bold;
+            font-size: 0.85em;
+            color: #aaa;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+        .point-coords {
+            font-size: 1.1em;
+            color: #fff;
+            font-family: monospace;
+        }
+        #results {
+            margin-top: 20px;
+            background-color: #1e293b;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #3b82f6;
+            display: none;
+        }
+        .result-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+        }
+        .result-row:last-child {
+            margin-bottom: 0;
+        }
+        .result-val {
+            font-weight: bold;
+            font-family: monospace;
+        }
+        .highlight {
+            color: #3b82f6;
+        }
+        .saving {
+            color: #22c55e;
+            font-weight: bold;
+        }
+        .footer {
+            font-size: 0.8em;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <div>
+            <h2>3D Globe Simulator</h2>
+            <div class="instruction">
+                <strong>How to use:</strong><br>
+                Click <strong>anywhere on the globe</strong> to drop Point A, then click a second spot to drop Point B. The code will automatically trace both paths and calculate the distances live!
+            </div>
+            
+            <div class="point-display">
+                <div class="point-title">Point A (Start)</div>
+                <div id="coord-a" class="point-coords">Click on globe...</div>
+            </div>
+            
+            <div class="point-display">
+                <div class="point-title">Point B (End)</div>
+                <div id="coord-b" class="point-coords">Click on globe...</div>
+            </div>
+
+            <div id="results">
+                <div class="result-row" style="border-bottom: 1px solid #334155; padding-bottom: 5px; margin-bottom: 10px; font-weight: bold;">
+                    <span>Path Option</span>
+                    <span>Distance</span>
+                </div>
+                <div class="result-row">
+                    <span>Option B (Latitude Path):</span>
+                    <span id="dist-lat" class="result-val">--</span>
+                </div>
+                <div class="result-row">
+                    <span>Option A (Great Circle):</span>
+                    <span id="dist-gc" class="result-val highlight">--</span>
+                </div>
+                <div class="result-row" style="margin-top: 10px; padding-top: 5px; border-top: 1px solid #334155;">
+                    <span>Net Distance Saved:</span>
+                    <span id="dist-saved" class="result-val saving">--</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            Built using Plotly.js 3D WebGL Engine
+        </div>
+    </div>
+
+    <div id="plot-container">
+        <div id="globe-plot" style="width:100%; height:100%;"></div>
+    </div>
+
+    <script>
+        const R = 6371; // Earth's radius in km
+        let pointA = null;
+        let pointB = null;
+        const globeElement = document.getElementById('globe-plot');
+
+        // Generate base globe texture grid
+        function generateGlobeGrid() {
+            let xGrid = [], yGrid = [], zGrid = [];
+            // Latitudes from -90 to 90
+            for (let lat = -90; lat <= 90; lat += 2) {
+                let xRow = [], yRow = [], zRow = [];
+                let phi = (90 - lat) * Math.PI / 180;
+                
+                // Longitudes from -180 to 180
+                for (let lon = -180; lon <= 180; lon += 2) {
+                    let theta = (lon + 180) * Math.PI / 180;
+                    
+                    let x = R * Math.sin(phi) * Math.cos(theta);
+                    let y = R * Math.sin(phi) * Math.sin(theta);
+                    let z = R * Math.cos(phi);
+                    
+                    xRow.push(x);
+                    yRow.push(y);
+                    zRow.push(z);
+                }
+                xGrid.push(xRow);
+                yGrid.push(yRow);
+                zGrid.push(zRow);
+            }
+            return {x: xGrid, y: yGrid, z: zGrid};
+        }
+
+        const grid = generateGlobeGrid();
+
+        // Initial empty chart layout data
+        const baseGlobeTrace = {
+            type: 'surface',
+            x: grid.x,
+            y: grid.y,
+            z: grid.z,
+            opacity: 0.4,
+            showscale: false,
+            colorscale: [[0, '#334155'], [1, '#475569']],
+            hoverinfo: 'none'
+        };
+
+        const layout = {
+            paper_bgcolor: '#111',
+            plot_bgcolor: '#111',
+            margin: {l:0, r:0, t:0, b:0},
+            scene: {
+                xaxis: {visible: false, range: [-R*1.2, R*1.2]},
+                yaxis: {visible: false, range: [-R*1.2, R*1.2]},
+                zaxis: {visible: false, range: [-R*1.2, R*1.2]},
+                camera: {
+                    eye: {x: 1.5, y: 1.5, z: 1.2}
+                }
+            }
+        };
+
+        Plotly.newPlot(globeElement, [baseGlobeTrace], layout, {responsive: true});
+
+        // Convert cartesian 3D click coordinates back into Lat/Lon
+        function cartesianToLatLon(x, y, z) {
+            let rad = Math.sqrt(x*x + y*y + z*z);
+            let lat = Math.asin(z / rad) * 180 / Math.PI;
+            let lon = Math.atan2(y, x) * 180 / Math.PI;
+            return { lat: lat, lon: lon };
+        }
+
+        // Convert Lat/Lon to 3D Cartesian points
+        function latLonToCartesian(lat, lon, radius = R) {
+            let phi = (90 - lat) * Math.PI / 180;
+            let theta = (lon + 180) * Math.PI / 180;
+            return {
+                x: radius * Math.sin(phi) * Math.cos(theta),
+                y: radius * Math.sin(phi) * Math.sin(theta),
+                z: radius * Math.cos(phi)
+            };
+        }
+
+        // Event listener for click events on the WebGL globe surface
+        globeElement.on('plotly_click', function(data){
+            if(!data.points || data.points.length === 0) return;
+            
+            const pt = data.points[0];
+            // Get raw surface coordinate points
+            const coords = cartesianToLatLon(pt.x, pt.y, pt.z);
+            
+            if (!pointA || (pointA && pointB)) {
+                // First click, or reset cycle on third click
+                pointA = coords;
+                pointB = null;
+                document.getElementById('coord-a').innerText = `${pointA.lat.toFixed(2)}°N, ${pointA.lon.toFixed(2)}°E`;
+                document.getElementById('coord-b').innerText = `Click on globe...`;
+                document.getElementById('results').style.display = 'none';
+                updateGlobeDisplay();
+            } else {
+                // Second click
+                pointB = coords;
+                document.getElementById('coord-b').innerText = `${pointB.lat.toFixed(2)}°N, ${pointB.lon.toFixed(2)}°E`;
+                calculateAndDisplayPaths();
+            }
+        });
+
+        function updateGlobeDisplay(extraTraces = []) {
+            Plotly.react(globeElement, [baseGlobeTrace, ...extraTraces], layout);
+        }
+
+        function calculateAndDisplayPaths() {
+            let traces = [];
+
+            // 1. Draw markers for points A and B
+            let posA = latLonToCartesian(pointA.lat, pointA.lon, R * 1.02);
+            let posB = latLonToCartesian(pointB.lat, pointB.lon, R * 1.02);
+
+            traces.push({
+                type: 'scatter3d',
+                mode: 'markers+text',
+                x: [posA.x, posB.x],
+                y: [posA.y, posB.y],
+                z: [posA.z, posB.z],
+                text: ['A', 'B'],
+                textposition: 'top center',
+                marker: { size: 8, color: ['#ef4444', '#3b82f6'] },
+                name: 'Selected Targets'
+            });
+
+            // 2. Compute Option B: Path following constant latitude line
+            let latPathX = [], latPathY = [], latPathZ = [];
+            let startLon = pointA.lon;
+            let endLon = pointB.lon;
+            
+            // Shortest directional adjustment across the -180/180 loop
+            let diffLon = endLon - startLon;
+            if (diffLon > 180) diffLon -= 360;
+            if (diffLon < -180) diffLon += 360;
+
+            // Generate interpolation steps along the parallel line
+            const steps = 100;
+            for (let i = 0; i <= steps; i++) {
+                let interpLon = startLon + (diffLon * (i / steps));
+                // Line of latitude keeps point A's latitude locked, but interpolates to point B's latitude at the very last step if latitudes differ
+                let interpLat = pointA.lat + ((pointB.lat - pointA.lat) * (i / steps));
+                let p = latLonToCartesian(interpLat, interpLon, R * 1.01);
+                latPathX.push(p.x);
+                latPathY.push(p.y);
+                latPathZ.push(p.z);
+            }
+
+            traces.push({
+                type: 'scatter3d',
+                mode: 'lines',
+                x: latPathX,
+                y: latPathY,
+                z: latPathZ,
+                line: { color: '#eab308', width: 4, dash: 'dash' },
+                name: 'Latitude Parallel Route'
+            });
+
+            // Calculate Latitude-locked route distance approximation
+            let latDistance = 0;
+            if (Math.abs(pointA.lat - pointB.lat) < 0.001) {
+                // If sharing identical latitudes, use pure standard small circle geometry
+                let latRad = pointA.lat * Math.PI / 180;
+                let lonDeltaRad = Math.abs(diffLon) * Math.PI / 180;
+                latDistance = R * lonDeltaRad * Math.cos(latRad);
+            } else {
+                // Rhumb line/constant track approximation across different latitudes
+                let lat1 = pointA.lat * Math.PI / 180;
+                let lat2 = pointB.lat * Math.PI / 180;
+                let dLat = lat2 - lat1;
+                let dLon = Math.abs(diffLon) * Math.PI / 180;
+                
+                let projectFactor = Math.log(Math.tan(Math.PI/4 + lat2/2) / Math.tan(Math.PI/4 + lat1/2));
+                let q = (Math.abs(projectFactor) > 1e-9) ? dLat / projectFactor : Math.cos(lat1);
+                latDistance = Math.sqrt(dLat*dLat + q*q*dLon*dLon) * R;
+            }
+
+            // 3. Compute Option A: Great Circle Path (SLERP interpolation)
+            let gcPathX = [], gcPathY = [], gcPathZ = [];
+            let pA_vec = latLonToCartesian(pointA.lat, pointA.lon, R);
+            let pB_vec = latLonToCartesian(pointB.lat, pointB.lon, R);
+
+            // Dot product to get total sweep angle omega
+            let dot = (pA_vec.x*pB_vec.x + pA_vec.y*pB_vec.y + pA_vec.z*pB_vec.z) / (R*R);
+            dot = Math.max(-1, Math.min(1, dot)); // clamping boundaries
+            let omega = Math.acos(dot);
+            let gcDistance = R * omega;
+
+            if (omega > 0.001) {
+                for (let i = 0; i <= steps; i++) {
+                    let t = i / steps;
+                    let sinOm = Math.sin(omega);
+                    let scaleA = Math.sin((1 - t) * omega) / sinOm;
+                    let scaleB = Math.sin(t * omega) / sinOm;
+                    
+                    let x = scaleA * pA_vec.x + scaleB * pB_vec.x;
+                    let y = scaleA * pA_vec.y + scaleB * pB_vec.y;
+                    let z = scaleA * pA_vec.z + scaleB * pB_vec.z;
+                    
+                    // Push slightly outside globe surface boundary to prevent graphics rendering z-fighting clipping
+                    let mag = Math.sqrt(x*x + y*y + z*z);
+                    let scaleOut = (R * 1.015) / mag;
+                    
+                    gcPathX.push(x * scaleOut);
+                    gcPathY.push(y * scaleOut);
+                    gcPathZ.push(z * scaleOut);
+                }
+            } else {
+                gcPathX = [posA.x, posB.x];
+                gcPathY = [posA.y, posB.y];
+                gcPathZ = [posA.z, posB.z];
+            }
+
+            traces.push({
+                type: 'scatter3d',
+                mode: 'lines',
+                x: gcPathX,
+                y: gcPathY,
+                z: gcPathZ,
+                line: { color: '#00bc8c', width: 6 },
+                name: 'Great Circle True Path'
+            });
+
+            // Render all components together dynamically onto WebGL view
+            updateGlobeDisplay(traces);
+
+            // 4. Print results to dashboard HUD metrics pane
+            document.getElementById('dist-lat').innerText = `${latDistance.toFixed(2)} km`;
+            document.getElementById('dist-gc').innerText = `${gcDistance.toFixed(2)} km`;
+            
+            let savings = latDistance - gcDistance;
+            if (savings < 0.01) savings = 0; // handle rounding variations smoothly
+            document.getElementById('dist-saved').innerText = `${savings.toFixed(2)} km`;
+            
+            document.getElementById('results').style.display = 'block';
+        }
+    </script>
+</body>
+</html>

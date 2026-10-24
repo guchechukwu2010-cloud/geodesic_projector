@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D News-Style Globe Distance Calculator</title>
+    <!-- Tailwind CSS for modern news UI -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Three.js and OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #0a1128 0%, #020617 100%);
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            color: #f8fafc;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        /* Custom glow effects */
+        .neon-glow-green {
+            text-shadow: 0 0 10px rgba(34, 197, 94, 0.6), 0 0 20px rgba(34, 197, 94, 0.4);
+        }
+        .neon-glow-yellow {
+            text-shadow: 0 0 10px rgba(234, 179, 8, 0.6), 0 0 20px rgba(234, 179, 8, 0.4);
+        }
+        .panel-blur {
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <!-- Top Headline Banner (News Channel Style) -->
+    <div class="absolute top-0 left-0 w-full z-10 p-4 pointer-events-none flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div class="panel-blur rounded-xl p-4 flex items-center gap-4 pointer-events-auto animate-fade-in">
+            <div class="bg-red-600 text-white font-black tracking-widest text-xs px-3 py-1.5 rounded uppercase flex items-center gap-1.5 animate-pulse">
+                <span class="h-2 w-2 rounded-full bg-white"></span> Live Simulation
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
+                    <i class="fa-solid fa-earth-americas text-blue-400"></i> Geodesic Path Analyzer
+                </h1>
+                <p class="text-xs text-slate-400">Comparing Great Circles (Shortest Path) vs. Constant Latitudes</p>
+            </div>
+        </div>
+
+        <!-- Dynamic Instructions Panel -->
+        <div id="instructions" class="panel-blur rounded-xl px-5 py-3 text-sm text-slate-300 pointer-events-auto border-l-4 border-blue-500 max-w-sm">
+            <i class="fa-solid fa-circle-info text-blue-400 mr-1"></i> 
+            <span id="instruction-text">Click anywhere on the glowing globe to place <strong>Point A</strong>.</span>
+        </div>
+    </div>
+
+    <!-- Main Telemetry UI Sidebar -->
+    <div class="absolute bottom-6 left-6 z-10 w-96 flex flex-col gap-4 pointer-events-none">
+        
+        <!-- Coordinates & Results Card -->
+        <div id="telemetry-card" class="panel-blur rounded-2xl p-5 pointer-events-auto transition-all duration-500 transform translate-y-4 opacity-0 scale-95 flex flex-col gap-4">
+            
+            <!-- Point Selector Displayer -->
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                    <div class="text-[10px] uppercase font-bold tracking-wider text-emerald-400 flex items-center gap-1">
+                        <i class="fa-solid fa-location-dot"></i> Point A
+                    </div>
+                    <div id="coord-a" class="text-sm font-semibold mt-1 text-slate-200">Not Set</div>
+                </div>
+                <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                    <div class="text-[10px] uppercase font-bold tracking-wider text-amber-400 flex items-center gap-1">
+                        <i class="fa-solid fa-location-dot"></i> Point B
+                    </div>
+                    <div id="coord-b" class="text-sm font-semibold mt-1 text-slate-200">Not Set</div>
+                </div>
+            </div>
+
+            <!-- Distance Outputs -->
+            <div class="flex flex-col gap-2.5">
+                <div class="flex justify-between items-center bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20">
+                    <div class="text-xs font-medium text-emerald-300">
+                        <i class="fa-solid fa-route mr-1"></i> Option A: Great Circle Route
+                    </div>
+                    <div id="dist-gc" class="text-base font-bold text-emerald-400 neon-glow-green">0.00 km</div>
+                </div>
+
+                <div class="flex justify-between items-center bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+                    <div class="text-xs font-medium text-amber-300">
+                        <i class="fa-solid fa-vector-square mr-1"></i> Option B: Latitude Route
+                    </div>
+                    <div id="dist-lat" class="text-base font-bold text-amber-400 neon-glow-yellow">0.00 km</div>
+                </div>
+            </div>
+
+            <!-- Savings Banner -->
+            <div id="savings-banner" class="bg-blue-600/20 border border-blue-500/30 rounded-xl p-3 text-center text-sm font-semibold text-blue-300 hidden">
+                <i class="fa-solid fa-bolt text-yellow-400 mr-1 animate-bounce"></i> 
+                Great Circle saves <span id="savings-value" class="text-white font-bold">0.00</span> km!
+            </div>
+
+            <!-- Quick Action Buttons -->
+            <button id="reset-btn" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium py-2 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 border border-slate-700">
+                <i class="fa-solid fa-rotate-left"></i> Reset & Clear Map
+            </button>
+        </div>
+    </div>
+
+    <!-- Three.js App Engine Logic -->
+    <script>
+        // --- 1. CONFIGURATION & CONSTANTS ---
+        const EARTH_RADIUS_KM = 6371;
+        const GLOBE_RADIUS = 4; // Made bigger as requested
+        let pointA = null;
+        let pointB = null;
+        let markers = [];
+        let paths = [];
+
+        // --- 2. SETUP SCENE, CAMERA, & RENDERER ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x020617, 0.015);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 5, 9);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 5;
+        controls.maxDistance = 20;
+
+        // --- 3. LIGHTING (News Studio Aesthetic) ---
+        const ambientLight = new THREE.AmbientLight(0x1e293b, 1.5);
+        scene.add(ambientLight);
+
+        const blueStudioLight = new THREE.DirectionalLight(0x38bdf8, 2.5);
+        blueStudioLight.position.set(5, 3, 5);
+        scene.add(blueStudioLight);
+
+        const rimLight = new THREE.DirectionalLight(0x818cf8, 1.5);
+        rimLight.position.set(-5, -3, -5);
+        scene.add(rimLight);
+
+        // --- 4. GLOWING NEWS-STYLE GLOBE CREATION ---
+        // Base Planet Sphere
+        const sphereGeo = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
+        const sphereMat = new THREE.MeshStandardMaterial({
+            color: 0x0f172a,
+            roughness: 0.5,
+            metalness: 0.8,
+            bumpScale: 0.05,
+        });
+        const globe = new THREE.Mesh(sphereGeo, sphereMat);
+        scene.add(globe);
+
+        // Holographic Glowing Landmass Grid Simulation Layer
+        const wireframeGeo = new THREE.SphereGeometry(GLOBE_RADIUS + 0.01, 45, 45);
+        const wireframeMat = new THREE.MeshBasicMaterial({
+            color: 0x1e40af,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.25
+        });
+        const gridGlobe = new THREE.Mesh(wireframeGeo, wireframeMat);
+        scene.add(gridGlobe);
+
+        // Highly visible holographic Latitude / Longitude lines
+        const linesGroup = new THREE.Group();
+        const lineMaterial = new THREE.LineBasicMaterial({
+            color: 0x00f2ff, 
+            transparent: true, 
+            opacity: 0.4
+        });
+
+        // Generate Major Parallels (Latitudes)
+        for (let lat = -80; lat <= 80; lat += 20) {
+            const points = [];
+            const r = GLOBE_RADIUS * Math.cos(lat * Math.PI / 180);
+            const y = GLOBE_RADIUS * Math.sin(lat * Math.PI / 180);
+            for (let i = 0; i <= 128; i++) {
+                const theta = (i / 128) * Math.PI * 2;
+                points.push(new THREE.Vector3(r * Math.cos(theta), y, r * Math.sin(theta)));
+            }
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(geometry, lineMaterial);
+            linesGroup.add(line);
+        }
+
+        // Generate Major Meridians (Longitudes)
+        for (let lon = 0; lon < 360; lon += 20) {
+            const points = [];
+            const radLon = lon * Math.PI / 180;
+            for (let i = 0; i <= 128; i++) {
+                const lat = -90 + (i / 128) * 180;
+                const radLat = lat * Math.PI / 180;
+                points.push(new THREE.Vector3(
+                    GLOBE_RADIUS * Math.cos(radLat) * Math.cos(radLon),
+                    GLOBE_RADIUS * Math.sin(radLat),
+                    GLOBE_RADIUS * Math.cos(radLat) * Math.sin(radLon)
+                ));
+            }
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(geometry, lineMaterial);
+            linesGroup.add(line);
+        }
+        scene.add(linesGroup);
+
+        // --- 5. INTERACTIVE SELECTION LOGIC (FIXED NON-CRASHING) ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        window.addEventListener('click', (event) => {
+            // Ignore UI panel clicks
+            if (event.target.closest('.panel-blur')) return;
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(globe);
+
+            if (intersects.length > 0) {
+                const hitPoint = intersects[0].point;
+                handleGlobeClick(hitPoint);
+            }
+        });
+
+        function handleGlobeClick(position) {
+            if (!pointA) {
+                // Place Point A
+                pointA = position.clone();
+                createMarker(pointA, 0x10b981); // Emerald marker
+                updateUI();
+            } else if (!pointB) {
+                // Place Point B
+                pointB = position.clone();
+                createMarker(pointB, 0xf59e0b); // Amber marker
+                calculatePaths();
+                updateUI();
+            } else {
+                // Infinite Loop fix: If both points exist, click clears and sets new Point A
+                clearRouteData();
+                pointA = position.clone();
+                createMarker(pointA, 0x10b981);
+                updateUI();
+            }
+        }
+
+        function createMarker(position, colorHex) {
+            const markerGeo = new THREE.SphereGeometry(0.12, 16, 16);
+            const markerMat = new THREE.MeshBasicMaterial({ color: colorHex });
+            const marker = new THREE.Mesh(markerGeo, markerMat);
+            marker.position.copy(position);
+            scene.add(marker);
+            markers.push(marker);
+
+            // Add an outer pulse ring
+            const ringGeo = new THREE.RingGeometry(0.15, 0.22, 32);
+            const ringMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.position.copy(position);
+            ring.lookAt(new THREE.Vector3(0,0,0));
+            ring.position.multiplyScalar(1.01); 
+            scene.add(ring);
+            markers.push(ring);
+        }
+
+        // --- 6. GEODESIC CALCULATIONS & PATH RENDERING ---
+        function calculatePaths() {
+            const geoA = cartesianToSpherical(pointA);
+            const geoB = cartesianToSpherical(pointB);
+
+            // --- ROUTE A: Great Circle Route (SLERP) ---
+            const gcPoints = [];
+            const segments = 100;
+            for (let i = 0; i <= segments; i++) {
+                const t = i / segments;
+                const tempVec = new THREE.Vector3().copy(pointA).lerp(pointB, t).normalize().multiplyScalar(GLOBE_RADIUS + 0.02);
+                
+                // Real spherical interpolation for pure accuracy
+                const slerpVec = new THREE.Vector3();
+                THREE.Quaternion.slerp(
+                    new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), pointA.clone().normalize()),
+                    new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), pointB.clone().normalize()),
+                    slerpVec,
+                    t
+                );
+                
+                // Fallback to vector slerp approximation
+                const dot = pointA.clone().normalize().dot(pointB.clone().normalize());
+                const theta = Math.acos(Math.max(-1, Math.min(1, dot)));
+                
+                let p;
+                if(theta > 0.001) {
+                    p = pointA.clone().multiplyScalar(Math.sin((1-t)*theta)/Math.sin(theta))
+                        .add(pointB.clone().multiplyScalar(Math.sin(t*theta)/Math.sin(theta)));
+                } else {
+                    p = pointA.clone().lerp(pointB, t);
+                }
+                p.normalize().multiplyScalar(GLOBE_RADIUS + 0.03);
+                gcPoints.push(p);
+            }
+            
+            const gcGeo = new THREE.BufferGeometry().setFromPoints(gcPoints);
+            const gcMat = new THREE.LineBasicMaterial({ color: 0x10b981, linewidth: 4 });
+            const gcLine = new THREE.Line(gcGeo, gcMat);
+            scene.add(gcLine);
+            paths.push(gcLine);
+
+            // Calculate exact Great Circle Distance
+            const dot = pointA.clone().normalize().dot(pointB.clone().normalize());
+            const angularDist = Math.acos(Math.max(-1, Math.min(1, dot)));
+            const distGC_KM = angularDist * EARTH_RADIUS_KM;
+
+            // --- ROUTE B: Constant Latitude Route ---
+            const latPoints = [];
+            const lonStart = geoA.lon;
+            let lonEnd = geoB.lon;
+
+            // Account for wrapping around the globe optimally
+            let diffLon = lonEnd - lonStart;
+            if (diffLon > Math.PI) lonEnd -= 2 * Math.PI;
+            if (diffLon < -Math.PI) lonEnd += 2 * Math.PI;
+
+            for (let i = 0; i <= segments; i++) {
+                const t = i / segments;
+                // Linearly interpolate longitude, linearly interpolate latitude
+                const currentLon = lonStart + t * (lonEnd - lonStart);
+                const currentLat = geoA.lat + t * (geoB.lat - geoA.lat); 
+
+                const p = sphericalToCartesian(currentLat, currentLon, GLOBE_RADIUS + 0.02);
+                latPoints.push(p);
+            }
+
+            const latGeo = new THREE.BufferGeometry().setFromPoints(latPoints);
+            // Dotted profile via LineDashedMaterial
+            const latMat = new THREE.LineDashedMaterial({ 
+                color: 0xf59e0b, 
+                dashSize: 0.15, 
+                gapSize: 0.08 
+            });
+            const latLine = new THREE.Line(latGeo, latMat);
+            latLine.computeLineDistances(); // Required for dashed rendering
+            scene.add(latLine);
+            paths.push(latLine);
+
+            // Calculate precise constant-latitude curve length
+            let distLat_KM = 0;
+            if (Math.abs(geoA.lat - geoB.lat) < 0.001) {
+                // Pure parallel line path calculation
+                distLat_KM = Math.abs(lonEnd - lonStart) * EARTH_RADIUS_KM * Math.cos(geoA.lat);
+            } else {
+                // Rhumb line track approximation formula
+                const deltaPhi = geoB.lat - geoA.lat;
+                const deltaLon = lonEnd - lonStart;
+                const deltaPsi = Math.log(Math.tan(geoB.lat/2 + Math.PI/4) / Math.tan(geoA.lat/2 + Math.PI/4));
+                const q = Math.abs(deltaPsi) > 0.000001 ? deltaPhi / deltaPsi : Math.cos(geoA.lat);
+                distLat_KM = Math.sqrt(deltaPhi*deltaPhi + q*q*deltaLon*deltaLon) * EARTH_RADIUS_KM;
+            }
+
+            // --- UI DISPLAY INJECTIONS ---
+            document.getElementById('dist-gc').innerText = distGC_KM.toFixed(2) + ' km';
+            document.getElementById('dist-lat').innerText = distLat_KM.toFixed(2) + ' km';
+
+            const savings = distLat_KM - distGC_KM;
+            const savingsBanner = document.getElementById('savings-banner');
+            if (savings > 0.1) {
+                document.getElementById('savings-value').innerText = savings.toFixed(2);
+                savingsBanner.classList.remove('hidden');
+            } else {
+                savingsBanner.classList.add('hidden');
+            }
+        }
+
+        // --- 7. HELPER MATHEMATICAL TRANSLATION ENGINES ---
+        function cartesianToSpherical(vec) {
+            const norm = vec.clone().normalize();
+            const lat = Math.asin(norm.y);
+            const lon = Math.atan2(norm.z, norm.x);
+            return { lat, lon };
+        }
+
+        function sphericalToCartesian(lat, lon, radius) {
+            return new THREE.Vector3(
+                radius * Math.cos(lat) * Math.cos(lon),
+                radius * Math.sin(lat),
+                radius * Math.cos(lat) * Math.sin(lon)
+            );
+        }
+
+        function radToDeg(rad) { return (rad * 180 / Math.PI); }
+
+        // --- 8. DYNAMIC UI MANAGEMENT ---
+        function updateUI() {
+            const card = document.getElementById('telemetry-card');
+            const instructions = document.getElementById('instruction-text');
+
+            if (pointA && !pointB) {
+                const geoA = cartesianToSpherical(pointA);
+                document.getElementById('coord-a').innerText = `${radToDeg(geoA.lat).toFixed(1)}°N, ${radToDeg(geoA.lon).toFixed(1)}°E`;
+                instructions.innerHTML = `Great! Now choose <strong>Point B</strong> to instantly measure the distance curves.`;
+                card.classList.remove('opacity-0', 'translate-y-4', 'scale-95');
+            } else if (pointA && pointB) {
+                const geoB = cartesianToSpherical(pointB);
+                document.getElementById('coord-b').innerText = `${radToDeg(geoB.lat).toFixed(1)}°N, ${radToDeg(geoB.lon).toFixed(1)}°E`;
+                instructions.innerHTML = `<i class="fa-solid fa-square-check text-green-400"></i> Calculation complete! Click again anywhere to reset and start a new path.`;
+            }
+        }
+
+        function clearRouteData() {
+            markers.forEach(m => scene.remove(m));
+            paths.forEach(p => scene.remove(p));
+            markers = [];
+            paths = [];
+            pointA = null;
+            pointB = null;
+            document.getElementById('coord-a').innerText = "Not Set";
+            document.getElementById('coord-b').innerText = "Not Set";
+            document.getElementById('dist-gc').innerText = "0.00 km";
+            document.getElementById('dist-lat').innerText = "0.00 km";
+            document.getElementById('savings-banner').classList.add('hidden');
+        }
+
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            clearRouteData();
+            document.getElementById('instruction-text').innerHTML = `Click anywhere on the glowing globe to place <strong>Point A</strong>.`;
+        });
+
+        // --- 9. ANIMATION LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Slow cinematic spin when no points are selected to showcase glowing lines
+            if (!pointA) {
+                globe.rotation.y += 0.001;
+                linesGroup.rotation.y += 0.001;
+                gridGlobe.rotation.y += 0.001;
+            }
+
+            // Pulsing animation loop for outer ring markers
+            markers.forEach((m, idx) => {
+                if(m.geometry.type === "RingGeometry") {
+                    const scaleFactor = 1 + Math.sin(Date.now() * 0.006) * 0.15;
+                    m.scale.set(scaleFactor, scaleFactor, 1);
+                }
+            });
+
+            controls.update();
+            renderer.render(scene, geometry = scene.children);
+        }
+
+        // --- 10. RESPONSIVE RESIZE WINDOW CORRECTION ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start Engine
+        animate();
+    </script>
+</body>
+</html>
